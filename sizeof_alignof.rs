@@ -13,6 +13,11 @@ use std::{
 ///
 ///  see: https://cheats.rs/#memory-layout
 ///
+///  RFC:
+///  - https://github.com/rust-lang/rfcs/blob/master/text/1358-repr-align.md
+///  - https://github.com/rust-lang/rfcs/blob/master/text/1399-repr-pack.md
+///  - https://github.com/rust-lang/rfcs/blob/master/text/1758-repr-transparent.md
+///
 
 #[test]
 fn test_primitive() {
@@ -105,19 +110,37 @@ fn test_struct() {
         name: String,
         balance: u32,
     }
-
     assert_eq!(4 + 4 + 24, size_of::<Account>()); // id + balance + name
     assert_eq!(8, align_of::<Account>());
 
     #[repr(C)]
-    struct AccountC {
+    struct AccountReprC {
         id: u32,
         name: String,
         balance: u32,
     }
+    assert_eq!((4 + 4) + 24 + (4 + 4), size_of::<AccountReprC>()); // id + padding + name + balance + padding
+    assert_eq!(8, align_of::<AccountReprC>());
 
-    assert_eq!((4 + 4) + 24 + (4 + 4), size_of::<AccountC>()); // id + padding + name + balance + padding
-    assert_eq!(8, align_of::<AccountC>());
+    // 用于消除paddings, 减小内存
+    #[repr(C, packed(1))]
+    struct AccountReprCPacked {
+        id: u32,
+        name: String,
+        balance: u32,
+    }
+    assert_eq!(4 + 24 + 4, size_of::<AccountReprCPacked>()); // no padding
+    assert_eq!(1, align_of::<AccountReprCPacked>());
+
+    // 用于添加paddings, 隔离字段
+    #[repr(C, align(32))]
+    struct AccountReprCAlign {
+        id: u32,
+        name: String,
+        balance: u32,
+    }
+    assert_eq!(64, size_of::<AccountReprCAlign>());
+    assert_eq!(32, align_of::<AccountReprCAlign>());
 }
 
 #[test]
@@ -126,7 +149,6 @@ fn test_enum() {
         A(u8),    // tag(1 bit) + padding(align_of(u8)*8-1 bits) + size_of(u8)
         B(usize), // tag(1bit) + padding(align_of(usize)*8-1 bits) + size_of(usize)
     }
-
     assert_eq!(8 + 8, size_of::<MyEnum>()); // tag(1bit) + padding(8*8-1 bits) + size_of(usize)
     assert_eq!(8, align_of::<MyEnum>());
 }
@@ -163,14 +185,10 @@ fn test_closure() {
     let name = 10_u32;
 
     let f = || println!("{}", &name);
-    unsafe {
-        assert_eq!(8, size_of_val(&f));
-        assert_eq!(8, align_of_val(&f));
-    }
+    assert_eq!(8, size_of_val(&f));
+    assert_eq!(8, align_of_val(&f));
 
     let f = move || println!("{}", &name);
-    unsafe {
-        assert_eq!(4, size_of_val(&f));
-        assert_eq!(4, align_of_val(&f));
-    }
+    assert_eq!(4, size_of_val(&f));
+    assert_eq!(4, align_of_val(&f));
 }
