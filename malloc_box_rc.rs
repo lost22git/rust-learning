@@ -1,7 +1,9 @@
 #![allow(dead_code)]
+#![feature(slice_ptr_get)]
 
 use std::{
     alloc::{alloc, dealloc, handle_alloc_error, Layout},
+    ptr::NonNull,
     rc::Rc,
 };
 
@@ -15,7 +17,7 @@ use std::{
 #[test]
 fn test_alloc() {
     struct MyVec {
-        data_ptr: *mut u8,
+        data_ptr: NonNull<[u8]>,
         cap: usize,
         len: usize,
     }
@@ -28,7 +30,7 @@ fn test_alloc() {
                 if ptr.is_null() {
                     handle_alloc_error(layout);
                 }
-                ptr
+                NonNull::slice_from_raw_parts(NonNull::new_unchecked(ptr), cap)
             };
             println!("alloc: cap: {}", cap);
             Self {
@@ -37,21 +39,29 @@ fn test_alloc() {
                 len: 0,
             }
         }
+
+        unsafe fn check_cap(&self) -> bool {
+            self.data_ptr.len() == self.cap
+        }
     }
 
     impl Drop for MyVec {
         fn drop(&mut self) {
-            if !self.data_ptr.is_null() {
-                unsafe {
-                    dealloc(self.data_ptr, Layout::array::<u8>(self.cap).unwrap());
-                }
-                println!("dealloc: cap: {}", self.cap);
+            unsafe {
+                dealloc(
+                    self.data_ptr.as_mut_ptr(),
+                    Layout::array::<u8>(self.cap).unwrap(),
+                );
             }
+            println!("dealloc: cap: {}", self.cap);
         }
     }
 
     let v = MyVec::new(10);
     assert_eq!(10, v.cap);
+    unsafe {
+        assert!(v.check_cap());
+    }
     let _ = v;
 }
 
